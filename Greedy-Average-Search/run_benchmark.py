@@ -1,0 +1,152 @@
+"""
+Main script to run Max-k-Cut benchmarks
+"""
+
+import argparse
+import numpy as np
+import pandas as pd
+from pathlib import Path
+
+from graph_generation import generate_benchmark_datasets
+from benchmarking import MaxKCutBenchmark
+
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Run Max-k-Cut benchmarks')
+    parser.add_argument('--m', type=int, default=50, help='Number of graphs per dataset')
+    parser.add_argument('--v_min', type=int, default=15, help='Minimum vertices')
+    parser.add_argument('--v_max', type=int, default=20, help='Maximum vertices')
+    parser.add_argument('--k_values', type=int, nargs='+', default=[2, 3, 4], 
+                        help='Values of k to test')
+    parser.add_argument('--algorithms', type=str, nargs='+', 
+                        default=['greedy', 'spectral', 'gw_sdp'],
+                        help='Algorithms to benchmark')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--output_dir', type=str, default='results', 
+                        help='Directory to save results')
+    parser.add_argument('--weighted', action='store_true', help='Test weighted graphs')
+    parser.add_argument('--unweighted', action='store_true', help='Test unweighted graphs')
+    
+    args = parser.parse_args()
+    
+    # Default to both if neither specified
+    if not args.weighted and not args.unweighted:
+        args.weighted = True
+        args.unweighted = True
+    
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(exist_ok=True)
+    
+    print(f"Generating benchmark datasets with {args.m} graphs each...")
+    print(f"Vertex range: {args.v_min} to {args.v_max}")
+    print(f"Testing k values: {args.k_values}")
+    print(f"Algorithms: {args.algorithms}")
+    print("-" * 50)
+    
+    # Generate datasets
+    unweighted_datasets, weighted_datasets = generate_benchmark_datasets(
+        m=args.m, v_min=args.v_min, v_max=args.v_max, seed=args.seed
+    )
+    
+    # Initialize benchmark
+    benchmark = MaxKCutBenchmark()
+    
+    # Run benchmarks on unweighted graphs
+    if args.unweighted:
+        print("\nRunning benchmarks on unweighted graphs...")
+        unweighted_results = {}
+        
+        for dataset_name, dataset in unweighted_datasets.items():
+            print(f"\nDataset: {dataset_name}")
+            results = benchmark.run_dataset_test(
+                dataset, args.k_values, args.algorithms
+            )
+            unweighted_results[dataset_name] = results
+            
+            # Compute and display statistics
+            stats = benchmark.compute_statistics(results)
+            print(stats.to_string())
+            
+            # Save dataset-specific results
+            stats.to_csv(output_dir / f'unweighted_{dataset_name}_stats.csv')
+        
+        # Save combined results
+        benchmark.save_results(str(output_dir / 'unweighted_results.json'))
+        
+        # Create comparison across all datasets
+        all_unweighted_stats = []
+        for dataset_name, results in unweighted_results.items():
+            stats = benchmark.compute_statistics(results)
+            stats['dataset'] = dataset_name
+            all_unweighted_stats.append(stats)
+        
+        combined_unweighted = pd.concat(all_unweighted_stats, ignore_index=True)
+        combined_unweighted.to_csv(output_dir / 'unweighted_combined_stats.csv')
+        
+        # Create pivot tables for easier analysis
+        for k in args.k_values:
+            k_data = combined_unweighted[combined_unweighted['k'] == k]
+            pivot = k_data.pivot_table(
+                index='dataset', 
+                columns='algorithm', 
+                values='mean_cut'
+            )
+            pivot.to_csv(output_dir / f'unweighted_k{k}_comparison.csv')
+            print(f"\nUnweighted k={k} comparison:")
+            print(pivot.to_string())
+    
+    # Run benchmarks on weighted graphs
+    if args.weighted:
+        print("\n\nRunning benchmarks on weighted graphs...")
+        weighted_results = {}
+        
+        for dataset_name, dataset in weighted_datasets.items():
+            print(f"\nDataset: {dataset_name}")
+            results = benchmark.run_dataset_test(
+                dataset, args.k_values, args.algorithms
+            )
+            weighted_results[dataset_name] = results
+            
+            # Compute and display statistics
+            stats = benchmark.compute_statistics(results)
+            print(stats.to_string())
+            
+            # Save dataset-specific results
+            stats.to_csv(output_dir / f'weighted_{dataset_name}_stats.csv')
+        
+        # Save combined results
+        benchmark.save_results(str(output_dir / 'weighted_results.json'))
+        
+        # Create comparison across all datasets
+        all_weighted_stats = []
+        for dataset_name, results in weighted_results.items():
+            stats = benchmark.compute_statistics(results)
+            stats['dataset'] = dataset_name
+            all_weighted_stats.append(stats)
+        
+        combined_weighted = pd.concat(all_weighted_stats, ignore_index=True)
+        combined_weighted.to_csv(output_dir / 'weighted_combined_stats.csv')
+        
+        # Create pivot tables for easier analysis
+        for k in args.k_values:
+            k_data = combined_weighted[combined_weighted['k'] == k]
+            pivot = k_data.pivot_table(
+                index='dataset', 
+                columns='algorithm', 
+                values='mean_cut'
+            )
+            pivot.to_csv(output_dir / f'weighted_k{k}_comparison.csv')
+            print(f"\nWeighted k={k} comparison:")
+            print(pivot.to_string())
+    
+    print(f"\n\nResults saved to {output_dir}")
+    print("Summary files:")
+    print("- *_combined_stats.csv: All statistics for each graph type")
+    print("- *_k{k}_comparison.csv: Algorithm comparison for each k value")
+    print("- *_results.json: Complete results including partitions")
+
+
+if __name__ == "__main__":
+    main()

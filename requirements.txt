@@ -1,0 +1,10 @@
+numpy
+pandas
+matplotlib
+anytree
+jupyter
+networkx
+io
+sys
+os
+Ipython.display
