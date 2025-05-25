@@ -15,8 +15,10 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Run Max-k-Cut benchmarks')
     parser.add_argument('--m', type=int, default=50, help='Number of graphs per dataset')
-    parser.add_argument('--v_min', type=int, default=15, help='Minimum vertices')
-    parser.add_argument('--v_max', type=int, default=20, help='Maximum vertices')
+    parser.add_argument('--v_range', type=int, nargs=2, default=[15, 20], 
+                        help='Vertex range [min max]')
+    parser.add_argument('--v_min', type=int, help='Minimum vertices (deprecated, use --v_range)')
+    parser.add_argument('--v_max', type=int, help='Maximum vertices (deprecated, use --v_range)')
     parser.add_argument('--k_values', type=int, nargs='+', default=[2, 3, 4], 
                         help='Values of k to test')
     parser.add_argument('--algorithms', type=str, nargs='+', 
@@ -30,24 +32,52 @@ def main():
     
     args = parser.parse_args()
     
+    # Handle vertex range - support both old and new syntax
+    if args.v_min is not None or args.v_max is not None:
+        print("Warning: --v_min and --v_max are deprecated. Use --v_range instead.")
+        v_min = args.v_min if args.v_min is not None else args.v_range[0]
+        v_max = args.v_max if args.v_max is not None else args.v_range[1]
+    else:
+        v_min, v_max = args.v_range
+    
     # Default to both if neither specified
     if not args.weighted and not args.unweighted:
         args.weighted = True
         args.unweighted = True
     
-    # Create output directory
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(exist_ok=True)
+    # Create output directory with timestamp to avoid overwriting
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = Path(args.output_dir) / f'run_{timestamp}'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save run configuration
+    config = {
+        'm': args.m,
+        'v_min': v_min,
+        'v_max': v_max,
+        'k_values': args.k_values,
+        'algorithms': args.algorithms,
+        'seed': args.seed,
+        'weighted': args.weighted,
+        'unweighted': args.unweighted,
+        'timestamp': timestamp
+    }
+    
+    import json
+    with open(output_dir / 'config.json', 'w') as f:
+        json.dump(config, f, indent=2)
     
     print(f"Generating benchmark datasets with {args.m} graphs each...")
-    print(f"Vertex range: {args.v_min} to {args.v_max}")
+    print(f"Vertex range: {v_min} to {v_max}")
     print(f"Testing k values: {args.k_values}")
     print(f"Algorithms: {args.algorithms}")
+    print(f"Results will be saved to: {output_dir}")
     print("-" * 50)
     
     # Generate datasets
     unweighted_datasets, weighted_datasets = generate_benchmark_datasets(
-        m=args.m, v_min=args.v_min, v_max=args.v_max, seed=args.seed
+        m=args.m, v_min=v_min, v_max=v_max, seed=args.seed
     )
     
     # Initialize benchmark
@@ -143,6 +173,7 @@ def main():
     
     print(f"\n\nResults saved to {output_dir}")
     print("Summary files:")
+    print("- config.json: Run configuration")
     print("- *_combined_stats.csv: All statistics for each graph type")
     print("- *_k{k}_comparison.csv: Algorithm comparison for each k value")
     print("- *_results.json: Complete results including partitions")
