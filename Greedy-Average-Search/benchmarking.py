@@ -165,11 +165,8 @@ class MaxKCutBenchmark:
                         'mean_cut': np.mean(cut_values),
                         'median_cut': np.median(cut_values),
                         'std_cut': np.std(cut_values),
-                        'min_cut': np.min(cut_values),
-                        'max_cut': np.max(cut_values),
                         'mean_runtime': np.mean(runtimes) if runtimes else None,
-                        'total_runtime': np.sum(runtimes) if runtimes else None,
-                        'success_rate': len(cut_values) / len(alg_results)
+                        'total_runtime': np.sum(runtimes) if runtimes else None
                     })
         
         return pd.DataFrame(stats_data)
