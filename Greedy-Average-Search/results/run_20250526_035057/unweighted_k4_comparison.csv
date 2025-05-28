@@ -1,8 +1,0 @@
-dataset,greedy,gw_sdp,spectral
-Extremely Sparse,30.55,34.65,27.15
-Isolated,6.95,6.7,5.05
-Moderately Dense,68.0,75.5,64.8
-Moderately Sparse,34.55,39.35,31.3
-Transitioning,29.15,33.4,26.65
-Very Dense,101.15,108.8,81.05
-Very Sparse,14.25,16.0,11.3

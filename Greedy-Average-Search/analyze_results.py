@@ -82,7 +82,23 @@ def plot_algorithm_comparison(all_results, graph_type='unweighted', k=2):
             datasets.update(k_data['dataset'].unique())
     
     algorithms = sorted(list(algorithms))
-    datasets = sorted(list(datasets))
+    
+    # Define the preferred order for datasets
+    dataset_order = ["Isolated", "Transitioning", "Extremely Sparse", 
+                     "Very Sparse", "Moderately Sparse", "Moderately Dense", "Very Dense"]
+    
+    # Sort datasets according to the preferred order, keeping any extras at the end
+    ordered_datasets = []
+    for ds in dataset_order:
+        if ds in datasets:
+            ordered_datasets.append(ds)
+    
+    # Add any datasets not in the preferred order at the end
+    for ds in sorted(list(datasets)):
+        if ds not in ordered_datasets:
+            ordered_datasets.append(ds)
+    
+    datasets = ordered_datasets
     
     # Plot 1: Algorithm performance by dataset
     for alg in algorithms:
