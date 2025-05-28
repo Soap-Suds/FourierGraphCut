@@ -20,29 +20,48 @@ def load_run_results(run_dir):
     
     results = {
         'config': config,
-        'unweighted': {},
-        'weighted': {}
+        'combined': None,
+        'k_comparisons': {}
     }
     
-    # Load unweighted results if they exist
-    if (run_dir / 'unweighted_combined_stats.csv').exists():
-        results['unweighted']['combined'] = pd.read_csv(run_dir / 'unweighted_combined_stats.csv')
+    # Check for new memory-efficient format first
+    if (run_dir / 'combined_stats.csv').exists():
+        # New format
+        results['combined'] = pd.read_csv(run_dir / 'combined_stats.csv')
         
         # Load k-specific comparisons
         for k in config['k_values']:
-            k_file = run_dir / f'unweighted_k{k}_comparison.csv'
+            k_file = run_dir / f'k{k}_comparison.csv'
             if k_file.exists():
-                results['unweighted'][f'k{k}'] = pd.read_csv(k_file, index_col=0)
-    
-    # Load weighted results if they exist
-    if (run_dir / 'weighted_combined_stats.csv').exists():
-        results['weighted']['combined'] = pd.read_csv(run_dir / 'weighted_combined_stats.csv')
+                results['k_comparisons'][k] = pd.read_csv(k_file, index_col=0)
+    else:
+        # Old format - try to load
+        old_results = {
+            'unweighted': {},
+            'weighted': {}
+        }
         
-        # Load k-specific comparisons
-        for k in config['k_values']:
-            k_file = run_dir / f'weighted_k{k}_comparison.csv'
-            if k_file.exists():
-                results['weighted'][f'k{k}'] = pd.read_csv(k_file, index_col=0)
+        # Load unweighted results if they exist
+        if (run_dir / 'unweighted_combined_stats.csv').exists():
+            old_results['unweighted']['combined'] = pd.read_csv(run_dir / 'unweighted_combined_stats.csv')
+            
+            # Load k-specific comparisons
+            for k in config.get('k_values', []):
+                k_file = run_dir / f'unweighted_k{k}_comparison.csv'
+                if k_file.exists():
+                    old_results['unweighted'][f'k{k}'] = pd.read_csv(k_file, index_col=0)
+        
+        # Load weighted results if they exist
+        if (run_dir / 'weighted_combined_stats.csv').exists():
+            old_results['weighted']['combined'] = pd.read_csv(run_dir / 'weighted_combined_stats.csv')
+            
+            # Load k-specific comparisons
+            for k in config.get('k_values', []):
+                k_file = run_dir / f'weighted_k{k}_comparison.csv'
+                if k_file.exists():
+                    old_results['weighted'][f'k{k}'] = pd.read_csv(k_file, index_col=0)
+        
+        results['old_format'] = old_results
     
     return results
 
@@ -66,7 +85,7 @@ def compare_runs(results_dir, runs=None):
     return all_results
 
 
-def plot_algorithm_comparison(all_results, graph_type='unweighted', k=2):
+def plot_algorithm_comparison(all_results, graph_type='all', k=2):
     """Plot algorithm performance across different runs"""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
@@ -75,11 +94,20 @@ def plot_algorithm_comparison(all_results, graph_type='unweighted', k=2):
     datasets = set()
     
     for run_name, results in all_results.items():
-        if graph_type in results and 'combined' in results[graph_type]:
-            df = results[graph_type]['combined']
+        # Handle new format
+        if 'combined' in results and results['combined'] is not None:
+            df = results['combined']
             k_data = df[df['k'] == k]
             algorithms.update(k_data['algorithm'].unique())
             datasets.update(k_data['dataset'].unique())
+        # Handle old format
+        elif 'old_format' in results:
+            for gtype in ['unweighted', 'weighted']:
+                if gtype in results['old_format'] and 'combined' in results['old_format'][gtype]:
+                    df = results['old_format'][gtype]['combined']
+                    k_data = df[df['k'] == k]
+                    algorithms.update(k_data['algorithm'].unique())
+                    datasets.update(k_data['dataset'].unique())
     
     algorithms = sorted(list(algorithms))
     
@@ -106,11 +134,19 @@ def plot_algorithm_comparison(all_results, graph_type='unweighted', k=2):
         for dataset in datasets:
             values = []
             for run_name, results in all_results.items():
-                if graph_type in results and 'combined' in results[graph_type]:
-                    df = results[graph_type]['combined']
+                # Handle new format
+                if 'combined' in results and results['combined'] is not None:
+                    df = results['combined']
                     mask = (df['k'] == k) & (df['algorithm'] == alg) & (df['dataset'] == dataset)
                     if len(df[mask]) > 0:
                         values.append(df[mask]['mean_cut'].values[0])
+                # Handle old format
+                elif 'old_format' in results and graph_type != 'all':
+                    if graph_type in results['old_format'] and 'combined' in results['old_format'][graph_type]:
+                        df = results['old_format'][graph_type]['combined']
+                        mask = (df['k'] == k) & (df['algorithm'] == alg) & (df['dataset'] == dataset)
+                        if len(df[mask]) > 0:
+                            values.append(df[mask]['mean_cut'].values[0])
             
             if values:
                 means.append(np.mean(values))
@@ -121,7 +157,7 @@ def plot_algorithm_comparison(all_results, graph_type='unweighted', k=2):
     
     ax1.set_xlabel('Dataset')
     ax1.set_ylabel('Mean Cut Value')
-    ax1.set_title(f'{graph_type.capitalize()} Graphs - k={k} - Algorithm Performance')
+    ax1.set_title(f'Algorithm Performance - k={k}')
     ax1.legend()
     ax1.tick_params(axis='x', rotation=45)
     
@@ -131,19 +167,28 @@ def plot_algorithm_comparison(all_results, graph_type='unweighted', k=2):
         cut_values = []
         
         for run_name, results in all_results.items():
-            if graph_type in results and 'combined' in results[graph_type]:
-                df = results[graph_type]['combined']
+            # Handle new format
+            if 'combined' in results and results['combined'] is not None:
+                df = results['combined']
                 alg_data = df[(df['k'] == k) & (df['algorithm'] == alg)]
                 if len(alg_data) > 0:
                     runtimes.extend(alg_data['mean_runtime'].values)
                     cut_values.extend(alg_data['mean_cut'].values)
+            # Handle old format
+            elif 'old_format' in results and graph_type != 'all':
+                if graph_type in results['old_format'] and 'combined' in results['old_format'][graph_type]:
+                    df = results['old_format'][graph_type]['combined']
+                    alg_data = df[(df['k'] == k) & (df['algorithm'] == alg)]
+                    if len(alg_data) > 0:
+                        runtimes.extend(alg_data['mean_runtime'].values)
+                        cut_values.extend(alg_data['mean_cut'].values)
         
         if runtimes and cut_values:
             ax2.scatter(runtimes, cut_values, label=alg, s=100, alpha=0.6)
     
     ax2.set_xlabel('Mean Runtime (s)')
     ax2.set_ylabel('Mean Cut Value')
-    ax2.set_title(f'{graph_type.capitalize()} Graphs - k={k} - Runtime vs Quality')
+    ax2.set_title(f'Runtime vs Quality - k={k}')
     ax2.legend()
     ax2.set_xscale('log')
     
@@ -165,21 +210,37 @@ def generate_summary_report(all_results, output_file='summary_report.txt'):
             f.write(f"Graphs per dataset: {config['m']}\n")
             f.write(f"k values: {config['k_values']}\n")
             f.write(f"Algorithms: {config['algorithms']}\n")
+            if 'memory_efficient' in config:
+                f.write(f"Memory efficient: {config['memory_efficient']}\n")
             f.write("-" * 40 + "\n")
             
-            # Best performing algorithm for each k
-            for graph_type in ['unweighted', 'weighted']:
-                if graph_type in results and 'combined' in results[graph_type]:
-                    f.write(f"\n{graph_type.upper()} GRAPHS:\n")
-                    df = results[graph_type]['combined']
-                    
-                    for k in config['k_values']:
-                        k_data = df[df['k'] == k]
-                        if len(k_data) > 0:
-                            # Find best algorithm by mean cut value
-                            best_idx = k_data.groupby('algorithm')['mean_cut'].mean().idxmax()
-                            best_value = k_data.groupby('algorithm')['mean_cut'].mean().max()
-                            f.write(f"  k={k}: Best algorithm = {best_idx} (avg cut = {best_value:.2f})\n")
+            # Handle new format
+            if 'combined' in results and results['combined'] is not None:
+                df = results['combined']
+                f.write("\nRESULTS:\n")
+                
+                for k in config['k_values']:
+                    k_data = df[df['k'] == k]
+                    if len(k_data) > 0:
+                        # Find best algorithm by mean cut value
+                        best_idx = k_data.groupby('algorithm')['mean_cut'].mean().idxmax()
+                        best_value = k_data.groupby('algorithm')['mean_cut'].mean().max()
+                        f.write(f"  k={k}: Best algorithm = {best_idx} (avg cut = {best_value:.2f})\n")
+            
+            # Handle old format
+            elif 'old_format' in results:
+                for graph_type in ['unweighted', 'weighted']:
+                    if graph_type in results['old_format'] and 'combined' in results['old_format'][graph_type]:
+                        f.write(f"\n{graph_type.upper()} GRAPHS:\n")
+                        df = results['old_format'][graph_type]['combined']
+                        
+                        for k in config['k_values']:
+                            k_data = df[df['k'] == k]
+                            if len(k_data) > 0:
+                                # Find best algorithm by mean cut value
+                                best_idx = k_data.groupby('algorithm')['mean_cut'].mean().idxmax()
+                                best_value = k_data.groupby('algorithm')['mean_cut'].mean().max()
+                                f.write(f"  k={k}: Best algorithm = {best_idx} (avg cut = {best_value:.2f})\n")
             
             f.write("\n" + "=" * 80 + "\n\n")
     
@@ -217,10 +278,20 @@ def main():
     
     # Generate plots
     if args.plot:
-        for graph_type in ['unweighted', 'weighted']:
-            fig = plot_algorithm_comparison(all_results, graph_type, args.k)
-            plt.savefig(f'comparison_{graph_type}_k{args.k}.png', dpi=150, bbox_inches='tight')
-            print(f"Saved plot: comparison_{graph_type}_k{args.k}.png")
+        # Detect format from first result
+        sample_results = next(iter(all_results.values()))
+        
+        if 'combined' in sample_results and sample_results['combined'] is not None:
+            # New format - single plot
+            fig = plot_algorithm_comparison(all_results, 'all', args.k)
+            plt.savefig(f'comparison_k{args.k}.png', dpi=150, bbox_inches='tight')
+            print(f"Saved plot: comparison_k{args.k}.png")
+        else:
+            # Old format - separate plots
+            for graph_type in ['unweighted', 'weighted']:
+                fig = plot_algorithm_comparison(all_results, graph_type, args.k)
+                plt.savefig(f'comparison_{graph_type}_k{args.k}.png', dpi=150, bbox_inches='tight')
+                print(f"Saved plot: comparison_{graph_type}_k{args.k}.png")
         
         plt.show()
     
@@ -233,12 +304,19 @@ def main():
         config = results['config']
         print(f"\n{run_name} (v={config['v_min']}-{config['v_max']}):")
         
-        for graph_type in ['unweighted', 'weighted']:
-            if graph_type in results and 'combined' in results[graph_type]:
-                df = results[graph_type]['combined']
-                pivot = df.pivot_table(values='mean_cut', index='algorithm', columns='k', aggfunc='mean')
-                print(f"\n  {graph_type.upper()}:")
-                print(pivot.round(2).to_string(index=True))
+        # Handle new format
+        if 'combined' in results and results['combined'] is not None:
+            df = results['combined']
+            pivot = df.pivot_table(values='mean_cut', index='algorithm', columns='k', aggfunc='mean')
+            print(pivot.round(2).to_string(index=True))
+        # Handle old format
+        elif 'old_format' in results:
+            for graph_type in ['unweighted', 'weighted']:
+                if graph_type in results['old_format'] and 'combined' in results['old_format'][graph_type]:
+                    df = results['old_format'][graph_type]['combined']
+                    pivot = df.pivot_table(values='mean_cut', index='algorithm', columns='k', aggfunc='mean')
+                    print(f"\n  {graph_type.upper()}:")
+                    print(pivot.round(2).to_string(index=True))
 
 
 if __name__ == "__main__":

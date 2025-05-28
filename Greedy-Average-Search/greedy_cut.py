@@ -123,6 +123,12 @@ class GreedyFourierSearch:
 
         self._branch(node)
         best_child = max(node.children, key=lambda child: child.bound)
+        
+        # Delete other children to free memory
+        for child in node.children:
+            if child != best_child:
+                child.parent = None
+        
         return self.search(best_child)
     
     def solve(self):
